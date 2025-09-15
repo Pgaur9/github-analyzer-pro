@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme tokens */
+:root {
+  --bg: 12 12 16;          /* deep neutral */
+  --panel: 18 18 24;
+  --muted: 160 160 180;
+  --text: 236 236 245;
+  --indigo: 99 102 241;    /* indigo-500 */
+  --ring: 99 102 241;
+}
+
+html, body { height: 100%; }
+body {
+  color: rgb(var(--text));
+  background-color: rgb(var(--bg));
+  background-image:
+    radial-gradient(800px 400px at 10% -10%, rgba(99,102,241,0.22), transparent 60%),
+    radial-gradient(1000px 600px at 120% 10%, rgba(147,51,234,0.16), transparent 60%),
+    radial-gradient(640px 640px at 80% 120%, rgba(14,165,233,0.16), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { @apply underline decoration-white/20 hover:decoration-white/40 text-indigo-300 hover:text-indigo-200; }
+
+/* Wider container like your other repo */
+.container {
+  @apply mx-auto px-4;
+  max-width: 1280px;
+}
+
+/* Glassy panels */
+.card {
+  @apply rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur;
+}
+.card-lg { @apply rounded-3xl p-6 md:p-8 border border-white/10 bg-white/[0.06] backdrop-blur; }
+
+/* Buttons and inputs */
+.btn {
+  @apply inline-flex items-center gap-2 rounded-xl border px-4 py-2 transition-colors;
+  @apply border-white/10 bg-white/[0.06] hover:bg-white/[0.12];
+}
+.btn-primary {
+  @apply bg-indigo-600/90 hover:bg-indigo-600 text-white border-transparent;
+}
+.btn-ghost {
+  @apply bg-transparent border-white/10 hover:bg-white/[0.06] text-white/90;
+}
+.input, .textarea {
+  @apply w-full rounded-xl bg-white/[0.05] border border-white/15 px-3 py-2 outline-none;
+  @apply focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40;
+}
+.textarea { @apply min-h-[200px]; }
+.input-group {
+  @apply flex items-stretch gap-2;
+}
+.input-hero {
+  @apply flex-1 text-base md:text-lg px-4 py-3 rounded-2xl border border-white/15 bg-black/30;
+}
+
+/* Toolbar */
+.toolbar {
+  @apply flex items-center gap-2 flex-wrap text-sm;
+}
+.toolbar .chip {
+  @apply inline-flex items-center gap-2 rounded-full px-3 py-1.5 bg-white/[0.06] border border-white/10 text-white/90;
+}
+
+/* Headings like screenshot */
+.hero {
+  @apply text-4xl md:text-6xl font-extrabold tracking-tight text-white/95 text-center;
+}
+.hero-sub {
+  @apply text-base md:text-lg text-white/70 text-center max-w-3xl mx-auto;
+}
+
+/* Markdown preview: wrap everything safely */
+.prose {
+  @apply prose-invert max-w-none;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.prose p,
+.prose li,
+.prose td,
+.prose th { word-break: break-word; overflow-wrap: anywhere; }
+.prose pre {
+  @apply bg-black/40 border border-white/10 rounded-2xl;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+.prose code { @apply bg-white/10 px-1.5 py-0.5 rounded; }
+.prose table { @apply w-full; }
+.prose thead th { @apply border-b border-white/10; }
+
+/* Top pill navbar */
+.pillbar {
+  @apply sticky top-4 z-[50] mx-auto w-fit rounded-3xl border border-white/10 bg-black/30 backdrop-blur px-3 py-2 shadow;
+}
+.pillbar a {
+  @apply inline-flex items-center gap-2 rounded-2xl px-3 py-1.5 text-white/80 hover:text-white hover:bg-white/10;
+}
+.pillbar .active {
+  @apply bg-white/10 text-white;
+}
+
+/* Center loading overlay */
+.loading-overlay {
+  @apply fixed inset-0 z-[60] flex items-center justify-center;
+  background: radial-gradient(800px 400px at 50% 15%, rgba(99,102,241,0.15), transparent 60%),
+              radial-gradient(1000px 600px at 80% 85%, rgba(147,51,234,0.12), transparent 60%);
+  backdrop-filter: blur(6px);
+}
+.loading-card {
+  @apply card-lg max-w-sm text-center;
+}
+
+/* Simple 3-dot pulse */
+.dots::after {
+  content: "•••";
+  letter-spacing: 0.25em;
+  display: inline-block;
+  animation: dots 1.4s steps(4, jump-none) infinite;
+}
+@keyframes dots {
+  0% { clip-path: inset(0 0 0 0); }
+  25% { clip-path: inset(0 0 0 66%); }
+  50% { clip-path: inset(0 0 0 33%); }
+  75%,100% { clip-path: inset(0 0 0 0); }
+}
