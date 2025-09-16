@@ -7,15 +7,19 @@ function humanizeError(prefix: string, err: unknown) {
   const code = statusMatch ? Number(statusMatch[1]) : undefined;
 
   if (code === 404) {
-    return `${prefix} not enabled for this repository, or you do not have access. Enable it in Settings → Code security and analysis.`;
+    return `${prefix} not available: Feature not enabled for this repository. You can enable it in Settings → Code security and analysis.`;
   }
   if (code === 403) {
-    return `${prefix} not accessible with the provided token. Ensure PAT permissions include: Security events (read), Dependabot alerts (read), Code scanning alerts (read). If the repo is in an org with SSO, authorize the token for that org.`;
+    return `${prefix} not accessible: Token permissions may be insufficient. Ensure PAT includes: Security events (read), Dependabot alerts (read), Code scanning alerts (read). If the repo is in an org with SSO, authorize the token.`;
   }
   if (code === 401) {
-    return `${prefix} requires authentication, even for public repositories. Provide a PAT with the required permissions.`;
+    return `${prefix} requires authentication. Provide a PAT with the required permissions.`;
   }
-  return `${prefix} not accessible or not enabled. (${msg})`;
+  // Don't show technical errors for common cases
+  if (msg.includes("not enabled") || msg.includes("not accessible")) {
+    return `${prefix} not available for this repository.`;
+  }
+  return `${prefix} not accessible: ${msg}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -57,28 +61,44 @@ export async function POST(req: NextRequest) {
       codeScanning: any[] | null;
       warnings: string[];
       requiresAuth?: boolean;
-    } = { dependabot: null, codeScanning: null, warnings: [] };
+      hasSecurityFeatures?: boolean;
+    } = { dependabot: null, codeScanning: null, warnings: [], hasSecurityFeatures: false };
 
-    // Dependabot alerts
+    // Try Dependabot alerts - don't fail if unavailable
     try {
       const alerts = await githubRequest<any[]>(
         `/repos/${owner}/${repoName}/dependabot/alerts?per_page=100`,
         githubToken
       );
       result.dependabot = alerts ?? [];
+      result.hasSecurityFeatures = true;
     } catch (e) {
-      result.warnings.push(humanizeError("Dependabot alerts", e));
+      // Don't add warning for expected failures - just skip
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("404") && !msg.includes("not enabled")) {
+        result.warnings.push(humanizeError("Dependabot alerts", e));
+      }
     }
 
-    // Code scanning alerts
+    // Try Code scanning alerts - don't fail if unavailable  
     try {
       const cs = await githubRequest<any[]>(
         `/repos/${owner}/${repoName}/code-scanning/alerts?per_page=100`,
         githubToken
       );
       result.codeScanning = cs ?? [];
+      result.hasSecurityFeatures = true;
     } catch (e) {
-      result.warnings.push(humanizeError("Code scanning alerts", e));
+      // Don't add warning for expected failures - just skip
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("404") && !msg.includes("not enabled")) {
+        result.warnings.push(humanizeError("Code scanning alerts", e));
+      }
+    }
+
+    // Add informational message if no security features are available
+    if (!result.hasSecurityFeatures && result.warnings.length === 0) {
+      result.warnings.push("No security scanning features are enabled for this repository. Enable Dependabot and Code Scanning in your repository settings for enhanced security insights.");
     }
 
     return NextResponse.json(result, { status: 200 });

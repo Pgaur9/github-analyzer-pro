@@ -8,6 +8,7 @@ type ScanResult = {
   codeScanning: any[] | null;
   warnings: string[];
   requiresAuth?: boolean;
+  hasSecurityFeatures?: boolean;
   error?: string;
 };
 
@@ -119,7 +120,7 @@ export default function AnalyzerPage() {
       <section className="space-y-4 pt-2">
         <h1 className="hero">Security Analyzer</h1>
         <p className="hero-sub">
-          Fetch Dependabot and Code Scanning alerts. Token is optional, but GitHub requires authentication to access alerts even for public repositories.
+          Fetch security alerts from enabled features. Dependabot and Code Scanning are optional - the tool works without them.
         </p>
       </section>
 
