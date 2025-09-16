@@ -16,7 +16,18 @@ export async function POST(req: NextRequest) {
     }
     const { owner, repo: repoName } = parsed;
 
-    const repoMeta = await githubRequest<GitHubRepoMeta>(`/repos/${owner}/${repoName}`, githubToken);
+    // Try to get repo metadata - for public repos, token is optional
+    let repoMeta: GitHubRepoMeta;
+    try {
+      repoMeta = await githubRequest<GitHubRepoMeta>(`/repos/${owner}/${repoName}`, githubToken);
+    } catch (error: any) {
+      if (!githubToken && error.message.includes("403")) {
+        return NextResponse.json({ 
+          error: "This appears to be a private repository. Please provide a GitHub token to access it." 
+        }, { status: 403 });
+      }
+      throw error;
+    }
 
     const candidates = await getCandidateFiles(owner, repoName, githubToken);
     const files: Array<{ path: string; content: string }> = [];
@@ -35,7 +46,7 @@ export async function POST(req: NextRequest) {
         ? `${basePrompt}\n\nAdditional author notes/preferences:\n${userNotes}`
         : basePrompt;
 
-    const apiKey = "AIzaSyBwWrzKORN1ioXUeV7kWOB8xxQNoLPQ-XQ";
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "Server misconfigured: GEMINI_API_KEY missing" }, { status: 500 });
     }

@@ -11,7 +11,19 @@ export async function POST(req: NextRequest) {
     if (!parsed) return NextResponse.json({ error: "Invalid GitHub repo. Use URL or owner/repo." }, { status: 400 });
     const { owner, repo: repoName } = parsed;
 
-    const repoInfo = await githubRequest<{ default_branch: string }>(`/repos/${owner}/${repoName}`, githubToken);
+    // Try to get repo info - for public repos, token is optional
+    let repoInfo: { default_branch: string };
+    try {
+      repoInfo = await githubRequest<{ default_branch: string }>(`/repos/${owner}/${repoName}`, githubToken);
+    } catch (error: any) {
+      if (!githubToken && error.message.includes("403")) {
+        return NextResponse.json({ 
+          error: "This appears to be a private repository. Please provide a GitHub token to access it." 
+        }, { status: 403 });
+      }
+      throw error;
+    }
+    
     const languages = await githubRequest<Record<string, number>>(`/repos/${owner}/${repoName}/languages`, githubToken).catch(() => ({}));
 
     const candidates = await getCandidateFiles(owner, repoName, githubToken);
