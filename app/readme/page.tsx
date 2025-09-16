@@ -43,6 +43,26 @@ export default function ReadmePage() {
   const revealTimer = useRef<number | null>(null);
   const isRevealingRef = useRef(false);
   const latestFullText = useRef<string>("");
+  // Store the full target content to allow resuming interrupted animations
+  const [pendingTarget, setPendingTarget] = useState<string | null>(null);
+
+  // Utility: sleep for animations
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Helpers: sticky auto-scroll only when user is near the bottom
+  const isNearBottom = (el: HTMLElement, threshold = 80) => {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  };
+  
+  const stickToBottomIfNeeded = (el: HTMLElement | null) => {
+    if (!el) return;
+    if (isNearBottom(el)) {
+      // Use requestAnimationFrame to avoid layout thrash during rapid updates
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  };
 
   // Initial load: only load token + gemini key by default.
   // Load repo/notes/markdown only if "remember" was enabled previously.
@@ -162,70 +182,106 @@ export default function ReadmePage() {
     ).map((m) => m[0]);
   };
 
-  const startReveal = (full: string) => {
+  const startReveal = async (full: string) => {
     cancelReveal();
-    latestFullText.current = full;
+    const cleanText = full.replace(/\r\n/g, "\n");
+    latestFullText.current = cleanText;
+    setPendingTarget(cleanText);
     setIsRevealing(true);
     setMarkdown("");
-    const tokens = tokenizeMarkdown(full);
-    let i = 0;
-    let currentLength = 0;
     
-    const step = () => {
-      // Dynamic chunk size for smoother animation
-      const chunkSize = Math.min(6, Math.max(1, Math.floor(tokens.length / 200)));
-      const nextTokens = tokens.slice(i, i + chunkSize);
-      const next = nextTokens.join("");
-      i += chunkSize;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    
+    let currentText = "";
+    const baseStepMs = 8;
+    
+    for (let i = 0; i < cleanText.length; i++) {
+      // Check if animation should continue
+      if (!isRevealingRef.current) break;
       
-      setMarkdown((prev) => {
-        const newContent = prev + next;
-        currentLength = newContent.length;
-        
-        // Auto-scroll both editor and preview
-        setTimeout(() => {
-          if (editorRef.current) {
-            const editor = editorRef.current;
-            const lines = newContent.split('\n').length;
-            const approximateScrollPosition = (lines - 10) * 20; // Approximate line height
-            editor.scrollTop = Math.max(0, approximateScrollPosition);
-          }
-          
-          if (previewRef.current) {
-            const preview = previewRef.current;
-            const scrollHeight = preview.scrollHeight;
-            const clientHeight = preview.clientHeight;
-            preview.scrollTop = Math.max(0, scrollHeight - clientHeight * 1.2);
-          }
-        }, 10);
-        
-        return newContent;
-      });
+      currentText += cleanText[i];
+      setMarkdown(currentText);
       
-      if (i < tokens.length && isRevealingRef.current) {
-        // Variable speed: slower for headers and code blocks, faster for regular text
-        const lastToken = nextTokens[nextTokens.length - 1] || '';
-        const delay = lastToken.includes('#') || lastToken.includes('```') ? 40 :
-                     lastToken.includes('*') || lastToken.includes('`') ? 25 :
-                     lastToken.trim() === '' ? 10 : 18;
-        
-        revealTimer.current = window.setTimeout(step, delay);
-      } else {
-        setIsRevealing(false);
-        // Ensure final scroll to bottom
-        setTimeout(() => {
-          if (editorRef.current) {
-            editorRef.current.scrollTop = editorRef.current.scrollHeight;
-          }
-          if (previewRef.current) {
-            previewRef.current.scrollTop = previewRef.current.scrollHeight;
-          }
-        }, 100);
+      // Update cursor position and scroll
+      if (editorRef.current) {
+        const pos = currentText.length;
+        editorRef.current.selectionStart = pos;
+        editorRef.current.selectionEnd = pos;
+        stickToBottomIfNeeded(editorRef.current);
       }
-    };
+      stickToBottomIfNeeded(previewRef.current);
+      
+      // Variable typing speed based on character
+      const ch = cleanText[i];
+      const extra = ch === '\n' ? 12 : ch === '.' ? 8 : ch === ',' ? 4 : 0;
+      const jitter = Math.floor(Math.random() * 4); // 0-3ms natural variation
+      
+      await delay(baseStepMs + extra + jitter);
+      
+      // Batch processing for very long content to avoid blocking
+      if (cleanText.length > 1500 && i % 25 === 0) {
+        await delay(0);
+      }
+    }
     
-    isRevealingRef.current = true;
-    step();
+    setIsRevealing(false);
+    setPendingTarget(null);
+    
+    // Final scroll to bottom
+    setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.scrollTop = editorRef.current.scrollHeight;
+      }
+      if (previewRef.current) {
+        previewRef.current.scrollTop = previewRef.current.scrollHeight;
+      }
+    }, 100);
+  };
+
+  // Continue typing from current position to target
+  const animateContinueToTarget = async () => {
+    if (!pendingTarget) return;
+    
+    const text = pendingTarget.replace(/\r\n/g, "\n");
+    const startIndex = markdown.length;
+    
+    if (!text.startsWith(markdown)) {
+      // If content diverged, just set target and exit
+      setMarkdown(text);
+      setPendingTarget(null);
+      return;
+    }
+    
+    setIsRevealing(true);
+    const baseStepMs = 8;
+    
+    for (let i = startIndex; i < text.length; i++) {
+      if (!isRevealingRef.current) break;
+      
+      const currentText = text.slice(0, i + 1);
+      setMarkdown(currentText);
+      
+      if (editorRef.current) {
+        const pos = i + 1;
+        editorRef.current.selectionStart = pos;
+        editorRef.current.selectionEnd = pos;
+        stickToBottomIfNeeded(editorRef.current);
+      }
+      stickToBottomIfNeeded(previewRef.current);
+      
+      const ch = text[i];
+      const extra = ch === '\n' ? 12 : ch === '.' ? 8 : ch === ',' ? 4 : 0;
+      const jitter = Math.floor(Math.random() * 4);
+      
+      await delay(baseStepMs + extra + jitter);
+      
+      if (text.length > 1500 && i % 25 === 0) {
+        await delay(0);
+      }
+    }
+    
+    setIsRevealing(false);
+    setPendingTarget(null);
   };
 
   const onGenerate = async () => {
@@ -251,7 +307,15 @@ export default function ReadmePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to generate");
-      startReveal(String(data.markdown || ""));
+      
+      const generatedMarkdown = String(data.markdown || "");
+      latestFullText.current = generatedMarkdown;
+      
+      // Hide loading overlay before typing animation starts
+      setIsGenerating(false);
+      
+      // Start typing animation
+      await startReveal(generatedMarkdown);
     } catch (e: any) {
       setError(e?.message || "Failed to generate");
     } finally {
@@ -514,6 +578,16 @@ export default function ReadmePage() {
                   <Play className="h-4 w-4" /> Fill instantly
                 </button>
               )}
+              {/* Resume typing button appears when we have a pending target and current text is a prefix */}
+              {!isRevealing && pendingTarget && markdown.length < pendingTarget.length && pendingTarget.startsWith(markdown) && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { void animateContinueToTarget(); }}
+                  title="Continue typing the generated README"
+                >
+                  <Play className="h-4 w-4" /> Resume typing
+                </button>
+              )}
               {markdown && markdown !== DEFAULT_MD && (
                 <button
                   className="btn btn-ghost"
@@ -521,6 +595,7 @@ export default function ReadmePage() {
                     cancelReveal();
                     setMarkdown(DEFAULT_MD);
                     latestFullText.current = "";
+                    setPendingTarget(null);
                   }}
                 >
                   <Trash2 className="h-4 w-4" /> Clear
