@@ -39,6 +39,7 @@ export default function ReadmePage() {
   const [error, setError] = useState<string | null>(null);
 
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const revealTimer = useRef<number | null>(null);
   const isRevealingRef = useRef(false);
   const latestFullText = useRef<string>("");
@@ -153,9 +154,10 @@ export default function ReadmePage() {
   };
 
   const tokenizeMarkdown = (text: string) => {
+    // Enhanced tokenization for better typing effect
     return Array.from(
       text.matchAll(
-        /```[\s\S]*?```|[#>*\-+`]|[\n]|[\w\u00A0-\uFFFF]+|[^\w\s]/g
+        /```[\s\S]*?```|`[^`]*`|#{1,6}[^\n]*|\*{1,2}[^*]*\*{1,2}|[>\-\+\*]\s+[^\n]*|[\n]{2,}|[\n]|[\w\u00A0-\uFFFF]+(?:['''][^\s]*)?|[^\w\s\n]/g
       )
     ).map((m) => m[0]);
   };
@@ -167,17 +169,61 @@ export default function ReadmePage() {
     setMarkdown("");
     const tokens = tokenizeMarkdown(full);
     let i = 0;
+    let currentLength = 0;
+    
     const step = () => {
-      const chunkSize = 8;
-      const next = tokens.slice(i, i + chunkSize).join("");
+      // Dynamic chunk size for smoother animation
+      const chunkSize = Math.min(6, Math.max(1, Math.floor(tokens.length / 200)));
+      const nextTokens = tokens.slice(i, i + chunkSize);
+      const next = nextTokens.join("");
       i += chunkSize;
-      setMarkdown((prev) => prev + next);
+      
+      setMarkdown((prev) => {
+        const newContent = prev + next;
+        currentLength = newContent.length;
+        
+        // Auto-scroll both editor and preview
+        setTimeout(() => {
+          if (editorRef.current) {
+            const editor = editorRef.current;
+            const lines = newContent.split('\n').length;
+            const approximateScrollPosition = (lines - 10) * 20; // Approximate line height
+            editor.scrollTop = Math.max(0, approximateScrollPosition);
+          }
+          
+          if (previewRef.current) {
+            const preview = previewRef.current;
+            const scrollHeight = preview.scrollHeight;
+            const clientHeight = preview.clientHeight;
+            preview.scrollTop = Math.max(0, scrollHeight - clientHeight * 1.2);
+          }
+        }, 10);
+        
+        return newContent;
+      });
+      
       if (i < tokens.length && isRevealingRef.current) {
-        revealTimer.current = window.setTimeout(step, 16);
+        // Variable speed: slower for headers and code blocks, faster for regular text
+        const lastToken = nextTokens[nextTokens.length - 1] || '';
+        const delay = lastToken.includes('#') || lastToken.includes('```') ? 40 :
+                     lastToken.includes('*') || lastToken.includes('`') ? 25 :
+                     lastToken.trim() === '' ? 10 : 18;
+        
+        revealTimer.current = window.setTimeout(step, delay);
       } else {
         setIsRevealing(false);
+        // Ensure final scroll to bottom
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.scrollTop = editorRef.current.scrollHeight;
+          }
+          if (previewRef.current) {
+            previewRef.current.scrollTop = previewRef.current.scrollHeight;
+          }
+        }, 100);
       }
     };
+    
     isRevealingRef.current = true;
     step();
   };
@@ -361,14 +407,21 @@ export default function ReadmePage() {
       </section>
 
       {/* Editor + Preview with toolbar headers */}
-      <section className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+      <section className="grid gap-6 grid-cols-1 xl:grid-cols-2 min-h-[600px]">
         {/* Editor */}
-        <div className="card-lg min-w-0">
+        <div className="card-lg min-w-0 flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div className="toolbar">
-              <span className="chip">Editor</span>
+              <span className="chip">
+                📝 Editor
+                {isRevealing && (
+                  <span className="ml-2 text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-full">
+                    Typing...
+                  </span>
+                )}
+              </span>
             </div>
-            <div className="toolbar">
+            <div className="toolbar flex-wrap">
               <button className="chip" onClick={async () => {
                 try { await navigator.clipboard.writeText(markdown); } catch { setError("Copy failed"); }
               }}>
@@ -429,52 +482,88 @@ export default function ReadmePage() {
               </button>
             </div>
           </div>
-          <textarea
-            ref={editorRef}
-            className="textarea min-h-[520px] md:min-h-[640px]"
-            value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
-          />
-          <div className="mt-3 flex gap-2">
-            {isRevealing ? (
-              <button
-                className="btn"
-                onClick={() => {
-                  cancelReveal();
-                  setMarkdown(latestFullText.current);
-                }}
-              >
-                <Square className="h-4 w-4" /> Stop animation
-              </button>
-            ) : (
-              <button
-                className="btn"
-                onClick={() => {
-                  cancelReveal();
-                  setMarkdown(latestFullText.current || markdown);
-                }}
-              >
-                <Play className="h-4 w-4" /> Fill instantly
-              </button>
-            )}
+          <div className="flex-1 flex flex-col">
+            <textarea
+              ref={editorRef}
+              className="textarea flex-1 min-h-[520px] md:min-h-[640px] resize-none"
+              style={{ scrollBehavior: 'smooth' }}
+              value={markdown}
+              onChange={(e) => setMarkdown(e.target.value)}
+              placeholder="Your README content will appear here as it's being generated..."
+            />
+            <div className="mt-3 flex gap-2">
+              {isRevealing ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    cancelReveal();
+                    setMarkdown(latestFullText.current);
+                  }}
+                >
+                  <Square className="h-4 w-4" /> Stop animation
+                </button>
+              ) : (
+                <button
+                  className="btn"
+                  onClick={() => {
+                    cancelReveal();
+                    setMarkdown(latestFullText.current || markdown);
+                  }}
+                  disabled={!latestFullText.current}
+                >
+                  <Play className="h-4 w-4" /> Fill instantly
+                </button>
+              )}
+              {markdown && markdown !== DEFAULT_MD && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    cancelReveal();
+                    setMarkdown(DEFAULT_MD);
+                    latestFullText.current = "";
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" /> Clear
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Preview */}
-        <div className="card-lg min-w-0">
+        <div className="card-lg min-w-0 flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div className="toolbar">
-              <span className="chip">Preview</span>
+              <span className="chip">
+                👁️ Preview
+                {(isGenerating || isRevealing) && (
+                  <span className="ml-2 text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full">
+                    Live rendering...
+                  </span>
+                )}
+              </span>
             </div>
-            {(isGenerating || isRevealing) && (
-              <span className="text-xs text-white/60">Streaming preview…</span>
-            )}
+            <div className="toolbar">
+              <span className="text-xs text-white/60">
+                {markdown.split('\n').length} lines • {markdown.length} chars
+              </span>
+            </div>
           </div>
-          <article className="prose">
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-              {markdown}
-            </ReactMarkdown>
-          </article>
+          <div 
+            ref={previewRef}
+            className="flex-1 overflow-y-auto pr-2"
+            style={{ 
+              scrollBehavior: 'smooth',
+              minHeight: '520px',
+              maxHeight: '640px'
+            }}
+          >
+            <article className="prose prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                {markdown}
+              </ReactMarkdown>
+            </article>
+          </div>
         </div>
       </section>
     </>
