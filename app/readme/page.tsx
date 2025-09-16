@@ -188,6 +188,7 @@ export default function ReadmePage() {
     latestFullText.current = cleanText;
     setPendingTarget(cleanText);
     setIsRevealing(true);
+    isRevealingRef.current = true;
     setMarkdown("");
     
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -253,6 +254,7 @@ export default function ReadmePage() {
     }
     
     setIsRevealing(true);
+    isRevealingRef.current = true;
     const baseStepMs = 8;
     
     for (let i = startIndex; i < text.length; i++) {
