@@ -6,8 +6,7 @@ import * as os from 'os';
 export interface RepomixOptions {
   include?: string[];
   ignore?: string[];
-  outputFormat?: 'txt' | 'xml' | 'markdown';
-  maxFileSize?: number;
+  style?: 'xml' | 'markdown' | 'json' | 'plain';
   followSymlinks?: boolean;
 }
 
@@ -35,8 +34,8 @@ export async function packRepository(
       repoPath,
       '--output',
       outputFile,
-      '--format',
-      options.outputFormat || 'txt'
+      '--style',
+      options.style || 'plain'
     ];
 
     // Add include patterns
@@ -49,12 +48,6 @@ export async function packRepository(
     if (options.ignore && options.ignore.length > 0) {
       args.push('--ignore');
       args.push(options.ignore.join(','));
-    }
-
-    // Add max file size
-    if (options.maxFileSize) {
-      args.push('--max-file-size');
-      args.push(options.maxFileSize.toString());
     }
 
     // Execute repomix

@@ -161,10 +161,9 @@ export async function POST(req: NextRequest) {
       if (includeRepoContext) {
         try {
           const packResult = await packRepository(repoPath, {
-            outputFormat: 'txt',
+            style: 'plain',
             ignore: [...getDefaultIgnorePatterns(), '.git/**', 'node_modules/**'],
             include: getDefaultIncludePatterns(),
-            maxFileSize: 50000, // Smaller files for context
           });
           
           // Truncate repo context if too large (keep first 8000 chars)

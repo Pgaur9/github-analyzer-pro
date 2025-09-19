@@ -39,10 +39,9 @@ export async function POST(req: NextRequest) {
 
       // Prepare repomix options with defaults
       const repomixOptions = {
-        outputFormat: options.outputFormat || 'txt',
+        style: options.style || 'plain',
         ignore: [...getDefaultIgnorePatterns(), ...(options.ignore || [])],
         include: options.include || getDefaultIncludePatterns(),
-        maxFileSize: options.maxFileSize || 100000, // 100KB default
         followSymlinks: options.followSymlinks || false,
       };
 
