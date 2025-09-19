@@ -142,10 +142,11 @@ export async function POST(req: NextRequest) {
         ? `https://${githubToken}@github.com/${owner}/${repoName}.git`
         : `https://github.com/${owner}/${repoName}.git`;
 
-      execSync(`git clone ${cloneUrl} ${repoPath}`, {
+      execSync(`git clone --depth 1 ${cloneUrl} ${repoPath}`, {
         encoding: 'utf8',
-        timeout: 60000,
-        stdio: 'ignore',
+        timeout: 120000, // Increased to 2 minutes
+        stdio: 'pipe',
+        maxBuffer: 1024 * 1024 * 10, // 10MB buffer
       });
 
       // Get git diff
@@ -156,23 +157,43 @@ export async function POST(req: NextRequest) {
         contextLines: 5,
       });
 
+      // Check if diff is too large
+      if (diffResult.diff.length > 500000) { // 500KB limit
+        return NextResponse.json({ 
+          error: "The diff is too large to process. Please try comparing smaller commit ranges or specific files." 
+        }, { status: 413 });
+      }
+
+      if (diffResult.stats.filesChanged > 100) {
+        return NextResponse.json({ 
+          error: "Too many files changed (>100). Please try comparing smaller commit ranges or specific files." 
+        }, { status: 413 });
+      }
+
+      // Check if there are any changes to review
+      if (diffResult.stats.filesChanged === 0) {
+        return NextResponse.json({ 
+          error: "No changes found between the specified commits. Please check your commit references." 
+        }, { status: 400 });
+      }
+
       // Get repository context if requested
       let repoContext = "";
       if (includeRepoContext) {
         try {
           const packResult = await packRepository(repoPath, {
             style: 'plain',
-            ignore: [...getDefaultIgnorePatterns(), '.git/**', 'node_modules/**'],
+            ignore: [...getDefaultIgnorePatterns(), '.git/**', 'node_modules/**', '*.log', '*.tmp'],
             include: getDefaultIncludePatterns(),
           });
           
-          // Truncate repo context if too large (keep first 8000 chars)
-          repoContext = packResult.content.length > 8000 
-            ? packResult.content.substring(0, 8000) + "\n\n[... truncated for length ...]"
+          // Truncate repo context if too large (keep first 12000 chars)
+          repoContext = packResult.content.length > 12000 
+            ? packResult.content.substring(0, 12000) + "\n\n[... truncated for length ...]"
             : packResult.content;
         } catch (error) {
           console.warn('Failed to get repo context:', error);
-          repoContext = "Repository context unavailable";
+          repoContext = "Repository context unavailable due to size or complexity";
         }
       }
 
@@ -181,10 +202,10 @@ export async function POST(req: NextRequest) {
 
       // Prepare prompt for AI
       const prompt = CODE_REVIEW_PROMPT
-        .replace('{repoContext}', repoContext)
-        .replace('{diffContent}', diffResult.diff)
+        .replace('{repoContext}', repoContext || "No repository context available")
+        .replace('{diffContent}', diffResult.diff || "No diff content available")
         .replace('{repository}', `${owner}/${repoName}`)
-        .replace('{branch}', currentBranch)
+        .replace('{branch}', currentBranch || "unknown")
         .replace('{baseCommit}', baseCommit)
         .replace('{targetCommit}', targetCommit)
         .replace('{filesChanged}', diffResult.stats.filesChanged.toString())
@@ -249,6 +270,12 @@ export async function POST(req: NextRequest) {
       const message = error instanceof Error ? error.message : "Unknown error";
       
       // Handle specific error cases
+      if (message.includes("ETIMEDOUT") || message.includes("timeout")) {
+        return NextResponse.json({ 
+          error: "Operation timed out. The repository might be too large or network is slow. Please try with a smaller repository or check your network connection." 
+        }, { status: 408 });
+      }
+      
       if (message.includes("Authentication failed") || message.includes("403")) {
         return NextResponse.json({ 
           error: "Repository access denied. Please check if the repository is private and provide a valid GitHub token." 
@@ -265,6 +292,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ 
           error: "AI service temporarily unavailable. Please try again later." 
         }, { status: 503 });
+      }
+
+      if (message.includes("spawnSync") || message.includes("ENOENT")) {
+        return NextResponse.json({ 
+          error: "Git operation failed. Please ensure the repository is accessible and try again." 
+        }, { status: 500 });
       }
 
       return NextResponse.json({ error: `Code review failed: ${message}` }, { status: 500 });

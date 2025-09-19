@@ -67,7 +67,8 @@ export async function getGitDiff(
     const diffOutput = execSync(args.join(' '), {
       cwd: repoPath,
       encoding: 'utf8',
-      timeout: 30000, // 30 seconds timeout
+      timeout: 60000, // Increased to 60 seconds
+      maxBuffer: 1024 * 1024 * 50, // 50MB buffer for large diffs
     });
 
     // Get detailed diff for each file
@@ -86,7 +87,8 @@ export async function getGitDiff(
     const detailedDiff = execSync(detailedDiffArgs.join(' '), {
       cwd: repoPath,
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: 60000, // Increased to 60 seconds
+      maxBuffer: 1024 * 1024 * 50, // 50MB buffer for large diffs
     });
 
     // Parse the output
@@ -94,7 +96,17 @@ export async function getGitDiff(
     
     return result;
   } catch (error) {
-    throw new Error(`Git diff failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    if (message.includes('ETIMEDOUT') || message.includes('timeout')) {
+      throw new Error(`Git diff operation timed out. The repository might be too large or contain very large diffs. Try comparing smaller commit ranges.`);
+    }
+    
+    if (message.includes('unknown revision') || message.includes('bad revision')) {
+      throw new Error(`Invalid commit reference. Please check that '${baseCommit}' and '${targetCommit}' are valid commit references.`);
+    }
+    
+    throw new Error(`Git diff failed: ${message}`);
   }
 }
 
@@ -113,7 +125,7 @@ export async function getGitLog(
       {
         cwd: repoPath,
         encoding: 'utf8',
-        timeout: 15000,
+        timeout: 30000, // Increased from 15 seconds
       }
     );
 
@@ -125,7 +137,13 @@ export async function getGitLog(
         return { hash, message, author, date };
       });
   } catch (error) {
-    throw new Error(`Git log failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    if (message.includes('ETIMEDOUT') || message.includes('timeout')) {
+      throw new Error(`Git log operation timed out. The repository might have a very large history.`);
+    }
+    
+    throw new Error(`Git log failed: ${message}`);
   }
 }
 
@@ -134,12 +152,18 @@ export async function getCurrentBranch(repoPath: string): Promise<string> {
     const branch = execSync('git branch --show-current', {
       cwd: repoPath,
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: 10000, // Increased from 5 seconds
     }).trim();
     
     return branch;
   } catch (error) {
-    throw new Error(`Get current branch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    if (message.includes('ETIMEDOUT') || message.includes('timeout')) {
+      throw new Error(`Git branch operation timed out.`);
+    }
+    
+    throw new Error(`Get current branch failed: ${message}`);
   }
 }
 
@@ -237,11 +261,26 @@ export function isGitRepository(repoPath: string): boolean {
 
 export async function cloneRepository(repoUrl: string, targetPath: string): Promise<void> {
   try {
-    execSync(`git clone ${repoUrl} ${targetPath}`, {
+    execSync(`git clone --depth 1 ${repoUrl} ${targetPath}`, {
       encoding: 'utf8',
-      timeout: 60000, // 60 seconds timeout
+      timeout: 120000, // Increased to 2 minutes
+      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
     });
   } catch (error) {
-    throw new Error(`Git clone failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    if (message.includes('ETIMEDOUT') || message.includes('timeout')) {
+      throw new Error(`Git clone operation timed out. The repository might be too large or network is slow.`);
+    }
+    
+    if (message.includes('Authentication failed') || message.includes('403')) {
+      throw new Error(`Authentication failed. Please check if the repository is private and provide a valid GitHub token.`);
+    }
+    
+    if (message.includes('not found') || message.includes('404')) {
+      throw new Error(`Repository not found. Please check the repository URL.`);
+    }
+    
+    throw new Error(`Git clone failed: ${message}`);
   }
 }
